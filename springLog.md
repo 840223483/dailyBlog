@@ -578,7 +578,7 @@ protected void refresh(ConfigurableApplicationContext applicationContext) {
 
 ------
 
-人
+
 
 #### `AliasRegistry` --- 别名注册器
 
