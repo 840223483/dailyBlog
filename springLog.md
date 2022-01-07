@@ -6,7 +6,7 @@
 
 ##### 基于XML配置文件：
 
-1.创建XML文件，定义`Bean`的信息
+1.创建XML文件，定义`Bean`信息
 
 2.通过`ClassPathXMlApplicationContenxt`类的`ClassPathXMlApplicationContenxt("beans.xml")`,XML文件存于`AbstractRefreshableConfigApplicationContenxt`中的`ConfigLocations`内
 
