@@ -1,4 +1,4 @@
-#### `Bean`的生命周期
+1. #### `Bean`的生命周期
 
 ------
 
@@ -427,11 +427,47 @@ protected int doLoadBeanDefinitions(InputSource inputSource, Resource resource)
 	}
 ```
 
-#### `invokeBeanFactoryPostProcessors` - 实例化之前调用增强器
+#### `invokeBeanFactoryPostProcessors`
 
 ------
 
-在容器刷新阶段，当Beandefinitions注册到容器`DefaultListableBeanFactory`后，在实例化之前
+###### 主要作用
+
+在实例化之前执行的扩展工作
+
+> invokeBeanFactoryPostProcessor()以两个接口为核心：
+>
+> - [BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor)
+>
+> - `BeanDefinitionRegistryPostProcessor`
+>
+> 而该方法主要是执行扩展类实现的这两个接口的方法：
+>
+> - [BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor)的**postProcessorBeanFactory()**
+> - `BeanDefintionRegitryPostProcessor`的**postProcessorBeanDefintionRegistry()**
+>
+> `BeanDefinitionRegistryPostProcessor`继承自[BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor)，不同的是，在该方法中，会首先执行扩展类实现的**postProcessorBeanDefintionRegistry()**，在这之后再执行**postProcessorBeanFactory()**
+
+📎Tips：该方法中使用了两个排序接口来判断执行顺序，因为知道了`BeanDefinitionRegistryPostProcessor`接口具有更高的优先级，但是在这些均实现了该接口的扩展类的执行顺序是如何确定的？
+
+这时就用到了两个排序的接口：
+
+- **PriorityOrdered**
+- **Ordered**
+
+`PriorityOrdered`继承自`Ordered`，有更高的优先级，在`invokeBeanFacatoryPostProcessor()`中就使用了`isTypeMatch()`来判断是否继承上述两个排序类
+
+###### 执行顺序
+
+1. 入参 `beanFactoryPostProcessors` 中的 `BeanDefinitionRegistryPostProcessor`， 调用 `postProcessBeanDefinitionRegistry`
+2. `BeanDefinitionRegistryPostProcessor` 接口实现类，并且实现了 `PriorityOrdered` 接口，调用 `postProcessBeanDefinitionRegistry`
+3. `BeanDefinitionRegistryPostProcessor` 接口实现类，并且实现了 `Ordered` 接口，调用 `postProcessBeanDefinitionRegistry`
+4. 剩余的 `BeanDefinitionRegistryPostProcessor` 接口实现类，调用 `postProcessBeanDefinitionRegistry`
+5. 所有 `BeanDefinitionRegistryPostProcessor` 接口实现类，调用 `postProcessBeanFactory`
+6. 入参 `beanFactoryPostProcessors` 中的常规 [BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor)，调用 `postProcessBeanFactory`
+7. 常规 [BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor) 接口实现类，并且实现了 `PriorityOrdered` 接口，调用 `postProcessBeanFactory`
+8. 常规 [BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor) 接口实现类，并且实现了 `Ordered` 接口，调用 `postProcessBeanFactory`
+9. 剩余的常规 [BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor) 接口的实现类，调用 `postProcessBeanFactory`
 
 ```java
 /**
@@ -509,7 +545,7 @@ public static void invokeBeanFactoryPostProcessors(
         postProcessorNames = beanFactory.getBeanNamesForType(BeanDefinitionRegistryPostProcessor.class, true, false);
         for (String ppName : postProcessorNames) {
             // 校验是否实现了Ordered接口，并且还未执行过
-            if (!processedBeans.contains(ppName) && beanFactory.isTypeMatch(ppName, Ordered.class)) {
+            if (!processedBeans.contains(ppName) && beanFactory.isTypeMatch(ppName, Ordered.class)) { 
                 currentRegistryProcessors.add(beanFactory.getBean(ppName, BeanDefinitionRegistryPostProcessor.class));
                 processedBeans.add(ppName);
             }
@@ -628,13 +664,136 @@ public static void invokeBeanFactoryPostProcessors(
 
 
 
+#### registerBeanPostProcessors
+
+------
+
+==registerBeanPostProcessors方法主要是将实现BeanPostProcessor的实现类注册到容器当中，在Bean初始化前后分别调用postProcessorAfterInitialization和postProcessorBeforeInitialization==
+
+> 在这个方法中，并不会去执行[BeanPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor)实现类的方法，只是注册到容器中，等待初始化前后执行
+>
+> 同样的，这个方法中同样按照判断`PriorityOrdered`和`Ordered`的实现来决定顺序
+
+#### finishBeanFactoryInitialization
+
+------
+
+==该方法实例化所有非懒加载的单例Bean==
+
+```java
+/**
+* AbstractApplicationContenxt
+*/
+protected void finishBeanFactoryInitialization(ConfigurableListableBeanFactory beanFactory) {
+		// Initialize conversion service for this context.
+		if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME) &&
+				beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
+			beanFactory.setConversionService(
+					beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
+		}
+
+		// Register a default embedded value resolver if no BeanFactoryPostProcessor
+		// (such as a PropertySourcesPlaceholderConfigurer bean) registered any before:
+		// at this point, primarily for resolution in annotation attribute values.
+		if (!beanFactory.hasEmbeddedValueResolver()) {
+			beanFactory.addEmbeddedValueResolver(strVal -> getEnvironment().resolvePlaceholders(strVal));
+		}
+
+		// Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
+		String[] weaverAwareNames = beanFactory.getBeanNamesForType(LoadTimeWeaverAware.class, false, false);
+		for (String weaverAwareName : weaverAwareNames) {
+			getBean(weaverAwareName);
+		}
+
+		// Stop using the temporary ClassLoader for type matching.
+		beanFactory.setTempClassLoader(null);
+
+		// Allow for caching all bean definition metadata, not expecting further changes.
+		beanFactory.freezeConfiguration();
+
+		// Instantiate all remaining (non-lazy-init) singletons.
+		beanFactory.preInstantiateSingletons();
+}
+```
+
+> `finishBeanFactoryInitialization`方法中的核心部分：
+>
+> `preInstantiateSingletons()`:实例化所有非懒加载单例Bean
+
+```java
+	/**
+	* DefaultListableBeanFactory
+	*/
+	@Override
+	public void preInstantiateSingletons() throws BeansException {
+		if (logger.isTraceEnabled()) {
+			logger.trace("Pre-instantiating singletons in " + this);
+		}
+
+		// Iterate over a copy to allow for init methods which in turn register new bean definitions.
+		// While this may not be part of the regular factory bootstrap, it does otherwise work fine.
+		List<String> beanNames = new ArrayList<>(this.beanDefinitionNames);
+
+		// Trigger initialization of all non-lazy singleton beans...
+		for (String beanName : beanNames) {
+			RootBeanDefinition bd = getMergedLocalBeanDefinition(beanName);
+			if (!bd.isAbstract() && bd.isSingleton() && !bd.isLazyInit()) {
+				if (isFactoryBean(beanName)) {
+					Object bean = getBean(FACTORY_BEAN_PREFIX + beanName);
+					if (bean instanceof FactoryBean) {
+						FactoryBean<?> factory = (FactoryBean<?>) bean;
+						boolean isEagerInit;
+						if (System.getSecurityManager() != null && factory instanceof SmartFactoryBean) {
+							isEagerInit = AccessController.doPrivileged(
+									(PrivilegedAction<Boolean>) ((SmartFactoryBean<?>) factory)::isEagerInit,
+									getAccessControlContext());
+						}
+						else {
+							isEagerInit = (factory instanceof SmartFactoryBean &&
+									((SmartFactoryBean<?>) factory).isEagerInit());
+						}
+						if (isEagerInit) {
+							getBean(beanName);
+						}
+					}
+				}
+				else {
+					getBean(beanName);
+				}
+			}
+		}
+
+		// Trigger post-initialization callback for all applicable beans...
+		for (String beanName : beanNames) {
+			Object singletonInstance = getSingleton(beanName);
+			if (singletonInstance instanceof SmartInitializingSingleton) {
+				StartupStep smartInitialize = this.getApplicationStartup().start("spring.beans.smart-initialize")
+						.tag("beanName", beanName);
+				SmartInitializingSingleton smartSingleton = (SmartInitializingSingleton) singletonInstance;
+				if (System.getSecurityManager() != null) {
+					AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
+						smartSingleton.afterSingletonsInstantiated();
+						return null;
+					}, getAccessControlContext());
+				}
+				else {
+					smartSingleton.afterSingletonsInstantiated();
+				}
+				smartInitialize.end();
+			}
+		}
+	}
+```
+
+
+
 #### `ConfigurationClassPostProcessor`Spring的自动装配如何实现
 
 ------
 
 
 
-####  `BeanFactoryPostProcessor ` and `BeanPostProcessor` 
+####  BeanFactoryPostProcessor和BeanPostProcessor
 
 ------
 
@@ -653,7 +812,6 @@ public static void invokeBeanFactoryPostProcessors(
 3. 实例化
 4. Bean
 5. 初始化
-
 
 
 `Person`类的name通过注入为`who`，自定义类实现BeanFactoryPostProcessor，重写`postProcessBeanFactory`方法，可在实例化该类前修改`name`的值为`xiaoyao`
@@ -783,7 +941,7 @@ protected void refresh(ConfigurableApplicationContext applicationContext) {
 
 ------
 
-人
+
 
 #### `AliasRegistry` --- 别名注册器
 
@@ -833,9 +991,7 @@ SimpleAliasRegistry作为AliasRegistry默认接口实现，它维护了一个Con
 
 当在Spring中存在
 
+#### FacatoryBean
 
-
-
-
-
+------
 
