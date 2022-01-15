@@ -935,7 +935,40 @@ protected void refresh(ConfigurableApplicationContext applicationContext) {
 
 该类基于javaConfig方式将`beanDefintion`注入到`DefaultListableBeanFactory`中
 
-#### `BeanDefinition` --- 
+#### `BeanDefinition` 
+
+------
+
+`BeanDefinition`是一个接口，它所描述的是一个`Bean`的实例，定义的是一个`Bean`的元数据，通常可以在`Bean`实例化之前通过实现`BeanFactoryPostProcessor`然后运用该接口的各种`set`以及`get`方法来修改`Bean`元数据，具体可见：
+
+[BeanFactoryPostProcessor](# BeanFactoryPostProcessor和BeanPostProcessor)
+
+[invokeBeanFactoryPostProcessors](# invokeBeanFactoryPostProcessors)
+
+###### 继承关系：
+
+```mermaid
+graph TD
+A[BeanDefinition] -->B[AbstractBeanDefiniton]
+B --> C[RootBeanDefinition]
+B --> D[GenericBeanDefiniton]
+
+```
+
+📎Tips：`BeanDefinition`是可以具有父子关系的，一般强况下，我们的`BeanDefinition`实际为`GenericBeanDefinition`，在`GenericBeanDefinition`中可以使用`setParentName`方法来设置父`BeanDefinition`。`RootBeanDefinition`可以理解为在编程中对`bean` `definition`的可合并的扩展的通用接口，在容器刷新期间的`Bean`实例化之前Spring通过`DefaultListableBeanFactory`类的[preInstantiateSingletons](# finishBeanFactoryInitialization)方法来对父子definition进行Merge产生新的`GenericBeanDefinition`
+
+举个🌰：
+
+在`applicationContenxt.xml`中定义
+
+```xml
+<bean id="parentBeanDefinition" class="xxx.xx.MyPatentBeanDefinition" init-Method="initMethod" />
+<bean id="childBeanDefinition" class="xxx.xx.MyChildBeanDefinition" parent="parentBeanDefinition"/>
+```
+
+那么，`MyChildBeanDefinition`这个`BeanDefintion`也同时具有了init-Method：initMethod，前提是`MyChildBeanDefinition`这个类中存在这个方法
+
+
 
 #### `DefaultListableBeanFactory` --- 加载`BeanDefinition`到容器
 
@@ -995,3 +1028,16 @@ SimpleAliasRegistry作为AliasRegistry默认接口实现，它维护了一个Con
 
 ------
 
+> 一般情况下实例化一个Bean有多种方式可以选择，配置文件或者注解的方式，在其他复杂的需求下，可以实现`FactoryBean`类，在其重写的方法中返回一些特殊要求的类，在这个重写的方法中可以定义自己的逻辑，以一种便捷的方式定义Bean
+
+==Bean的实例化比较复杂，此处待定，只要实现FactoryBean重写getObject方法使用编程的方式为Bean设置属性值，可以简洁地配置一个Bean==
+
+==FactoryBean是一个接口，实现类返回的并不是该类本身，而是重写的getObject方法返回的对象。一个Bean实现该接口后重写两个方法：==
+
+- ==getObject()==
+
+- ==getObjectType()==
+
+  
+
+  
